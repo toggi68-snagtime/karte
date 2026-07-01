@@ -898,11 +898,36 @@ function init() {
     bahnnetzLayer.addTo(map);
     ketteLayer = buildKettenLayer(); ketteLayer.addTo(map);
     trasseLayer = buildTrassenLayer(); trasseLayer.addTo(map);
-    L.control.layers(null, {
-      "🚂 Bahnnetz (BAV)": bahnnetzLayer,
-      "🔗 Reise-Ketten": ketteLayer,
-      "🚠 Bergbahn-Trassen (" + TRASSEN.length + ")": trasseLayer,
-    }, { collapsed:false, position:"topright" }).addTo(map);
+
+    // ---- Trafimage SBB BehiG-Status Overlays (offizielle SBB-Daten) ----
+    var trafiAttr = "SBB Handicap &copy; <a href='https://maps.trafimage.ch' target='_blank'>Trafimage</a>";
+    var trafiBase = "https://wms.trafimage.ch/?service=WMS&version=1.3.0&request=GetMap&format=image/png&transparent=true&crs=EPSG:3857&width=256&height=256";
+    function trafiLayer(layerId) {
+      return L.tileLayer.wms("https://wms.trafimage.ch/", {
+        layers: layerId,
+        format: "image/png",
+        transparent: true,
+        version: "1.3.0",
+        attribution: trafiAttr,
+        opacity: 0.9,
+        maxZoom: 19
+      });
+    }
+    var sbbBarrierefrei    = trafiLayer("ch.sbb.barrierfreierbahnhoefe");
+    var sbbTeilbarrierefrei= trafiLayer("ch.sbb.teilbarrierefreiebahnhoefe");
+    var sbbNichtBarriere   = trafiLayer("ch.sbb.nichtbarrierfreierbahnhoefe");
+    var sbbUnbekannt       = trafiLayer("ch.sbb.status_unbekannt");
+
+    var trassenLabel = "Bergbahn-Trassen (" + TRASSEN.length + ")";
+    var overlays = {};
+    overlays["Bahnnetz (BAV)"] = bahnnetzLayer;
+    overlays["Reise-Ketten"] = ketteLayer;
+    overlays[trassenLabel] = trasseLayer;
+    overlays["🟢 SBB barrierefrei"]        = sbbBarrierefrei;
+    overlays["🟡 SBB teilweise barrierefrei"] = sbbTeilbarrierefrei;
+    overlays["🔴 SBB nicht barrierefrei"]  = sbbNichtBarriere;
+    overlays["⚪ SBB Status unbekannt"]     = sbbUnbekannt;
+    L.control.layers(null, overlays, { collapsed:false, position:"topright" }).addTo(map);
     cluster = L.markerClusterGroup({
       showCoverageOnHover:false, maxClusterRadius:40,
       iconCreateFunction: function(cl) {
