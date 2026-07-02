@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Costa Rica – Familien-Karte</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;font-family:system-ui,-apple-system,sans-serif;color:#1a2530;}
+  #app{display:flex;flex-direction:column;height:100%;}
+  header{background:linear-gradient(135deg,#0a7d3b,#0d9488);color:#fff;padding:9px 13px;}
+  header h1{font-size:1.02rem;}
+  header p{font-size:.7rem;opacity:.92;margin-top:1px;}
+  #controls{padding:7px 10px;background:#f4f6f7;border-bottom:1px solid #dde3e6;}
+  #search{width:100%;padding:7px 10px;border:1px solid #cfd8dc;border-radius:8px;font-size:.85rem;margin-bottom:7px;}
+  #chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch;}
+  .chip{flex:0 0 auto;display:flex;align-items:center;gap:4px;padding:5px 10px;border-radius:16px;font-size:.72rem;color:#fff;border:none;cursor:pointer;white-space:nowrap;opacity:1;}
+  .chip.off{opacity:.3;}
+  #map{height:44vh;min-height:220px;}
+  #count{font-size:.68rem;color:#5a6b74;padding:6px 13px;background:#fff;border-bottom:1px solid #eef1f2;}
+  #list{flex:1;overflow-y:auto;background:#fff;}
+  .row{display:flex;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid #eef1f2;cursor:pointer;}
+  .row:active{background:#f0f7f3;}
+  .row .ic{font-size:1.1rem;width:22px;text-align:center;}
+  .row .nm{flex:1;font-size:.85rem;}
+  .row .tp{font-size:.66rem;color:#7a8890;}
+  .badge{display:inline-block;color:#fff;font-size:.66rem;padding:2px 8px;border-radius:10px;margin:4px 0;}
+  .leaflet-popup-content a{color:#0a7d3b;font-weight:600;text-decoration:none;}
+</style>
+</head>
+<body>
+<div id="app">
+  <header><h1>🇨🇷 Costa Rica – Familien-Karte</h1><p id="sub">lädt live aus der Datenbank …</p></header>
+  <div id="controls"><input id="search" type="text" placeholder="🔍 Suchen…"/><div id="chips"></div></div>
+  <div id="map"></div>
+  <div id="count"></div>
+  <div id="list"></div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+const SUPA="https://aiutnsdpurhitkolwdpq.supabase.co/rest/v1/attraktionen?country=eq.CR&select=name,lat,lng,kategorie&lat=not.is.null&limit=2000";
+const KEY="sb_publishable_UVQCX5SbY-iHM_WKv5MzYA_vVrOc9-H";
+
+const TYPES={
+ "Nationalpark":{c:"#0a7d3b",e:"🏞️"},"Vulkan":{c:"#e53935",e:"🌋"},"Meer/Insel":{c:"#1565c0",e:"🌊"},
+ "Wasserpark":{c:"#00acc1",e:"💧"},"Hängebrücke":{c:"#f57c00",e:"🌉"},"Tiere":{c:"#6d4c41",e:"🦥"},
+ "Strand/Baden":{c:"#fbc02d",e:"🏖️"},"Museum/Kultur":{c:"#8e24aa",e:"🏛️"},"Freizeitpark":{c:"#d81b60",e:"🎢"},
+ "Natur/Wasserfall":{c:"#26a69a",e:"💦"}
+};
+function typeOf(p){
+  if(/^(Parque|Zona)/i.test(p.n)){
+    if(/Volc[áa]n/i.test(p.n)) return "Vulkan";
+    if(/Marino|Baulas|Isla/i.test(p.n)) return "Meer/Insel";
+    return "Nationalpark";
+  }
+  return {aquapark:"Wasserpark",haengebruecke:"Hängebrücke",zoo:"Tiere",badesee:"Strand/Baden",freizeit:"Museum/Kultur",action:"Freizeitpark"}[p.k]||"Natur/Wasserfall";
+}
+
+const map=L.map('map').setView([9.9,-84.1],7);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap'}).addTo(map);
+const cluster=L.markerClusterGroup({maxClusterRadius:45}); map.addLayer(cluster);
+const active=new Set(Object.keys(TYPES)); let searchTxt=""; let items=[];
+
+(async()=>{
+  let rows=[];
+  try{ const r=await fetch(SUPA,{headers:{apikey:KEY,Authorization:"Bearer "+KEY}}); rows=await r.json(); }
+  catch(e){ document.getElementById('sub').textContent="Fehler beim Laden 😕"; return; }
+  rows=rows.map(x=>({n:x.name,la:x.lat,lo:x.lng,k:x.kategorie})).filter(x=>x.la&&x.lo);
+  rows.forEach(p=>p.t=typeOf(p));
+  rows.sort((a,b)=> a.t===b.t ? a.n.localeCompare(b.n) : a.t.localeCompare(b.t));
+  document.getElementById('sub').textContent=rows.length+" Ziele · OSM / Wikidata · live";
+
+  const chipsBox=document.getElementById('chips');
+  Object.entries(TYPES).forEach(([t,cfg])=>{
+    const n=rows.filter(p=>p.t===t).length; if(!n) return;
+    const b=document.createElement('button'); b.className='chip'; b.style.background=cfg.c; b.textContent=`${cfg.e} ${t} (${n})`;
+    b.onclick=()=>{ active.has(t)?active.delete(t):active.add(t); b.classList.toggle('off'); render(); };
+    chipsBox.appendChild(b);
+  });
+  document.getElementById('search').addEventListener('input',e=>{searchTxt=e.target.value.toLowerCase();render();});
+
+  const list=document.getElementById('list');
+  items=rows.map(p=>{
+    const cfg=TYPES[p.t];
+    const mk=L.circleMarker([p.la,p.lo],{radius:7,color:'#fff',weight:2,fillColor:cfg.c,fillOpacity:.9})
+      .bindPopup(`<b>${cfg.e} ${p.n}</b><br><span class="badge" style="background:${cfg.c}">${p.t}</span><br>${p.la.toFixed(4)}, ${p.lo.toFixed(4)}<br><a href="https://www.google.com/maps?q=${p.la},${p.lo}" target="_blank">🗺️ Google Maps →</a>`);
+    const row=document.createElement('div'); row.className='row';
+    row.innerHTML=`<span class="ic">${cfg.e}</span><span class="nm">${p.n}</span><span class="tp">${p.t}</span>`;
+    row.onclick=()=>{ map.setView([p.la,p.lo],13); mk.openPopup(); document.getElementById('map').scrollIntoView({behavior:'smooth'}); };
+    list.appendChild(row);
+    return {p,mk,row};
+  });
+  render();
+})();
+
+function render(){
+  cluster.clearLayers(); let vis=0;
+  items.forEach(({p,mk,row})=>{
+    const ok=active.has(p.t)&&p.n.toLowerCase().includes(searchTxt);
+    row.style.display=ok?'flex':'none';
+    if(ok){ cluster.addLayer(mk); vis++; }
+  });
+  document.getElementById('count').textContent=`${vis} Ziele sichtbar`;
+}
+</script>
+</body>
+</html>
